@@ -1,12 +1,24 @@
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from enum import Enum
+from typing import Optional, Dict, Any, List, Union
+
+
+class Impact(Enum):
+  """Enumeration for issue impact severity."""
+  HIGH = "high"
+  MEDIUM = "medium"
+  LOW = "low"
+  CRITICAL = "critical"
+
+  def __str__(self) -> str:
+    return self.value
 
 @dataclass
 class Issue:
   id: str
   title: str
   description: str
-  impact: str # e.g., "high", "medium", "low"
+  impact: Union[Impact, str] = Impact.LOW  # prefer `Impact`, accepts legacy strings
   selector: Optional[str] = None
   recommendation: Optional[str] = None
   auto_fix: Optional[Dict[str, Any]] = None # optional snippet or instructions for auto-fixing
@@ -19,7 +31,7 @@ class BaseRule:
   """
   id: str = "base-rule"
   title: str = "Base Rule"
-  impact: str = "low"
+  impact: Impact = Impact.LOW
   tags: List[str] = []
   
   def run(self, html: str, url: str, soup) -> List[Issue]:
