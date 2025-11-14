@@ -34,7 +34,7 @@ class BaseRule:
   impact: Impact = Impact.LOW
   tags: List[str] = []
   
-  def run(self, html: str, url: str, soup) -> List[Issue]:
+  def run(self, html: str, url: str, soup, headers: Dict[str, str] = None) -> List[Issue]:
     """
       Run the rule against the provided HTML content and return a list of issues found.
       
