@@ -1,4 +1,6 @@
 from urllib.parse import urljoin, urlparse
+
+from .sitemap_helpers import get_sitemaps_for_domain, sitemap_urls_containing
 from .registry import register
 from .base import BaseRule, Impact, Issue
 from .utils import fetch_head_or_get, fetch_follow_redirects, async_client
@@ -223,7 +225,35 @@ class CanonicalConsistent(BaseRule):
   tags = ["crawlability"]
 
   async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
-    raise NotImplementedError("This rule is not yet implemented.")
+    canonical_tag = soup.find("link", rel="canonical")
+    if not canonical_tag or not canonical_tag.get("href"):
+      return []
+    
+    canonical = canonical_tag.get("href").rstrip("/")
+    parsed = urlparse(canonical)
+    domain_root = f"{parsed.scheme}://{parsed.netloc}/"
+    
+    sitemaps = await get_sitemaps_for_domain(domain_root)
+    if not sitemaps:
+      return []
+    
+    in_sitemap = await sitemap_urls_containing(domain_root, canonical)
+    page_in_sitemap = await sitemap_urls_containing(domain_root, url.strip("/"))
+    issues = []
+    
+    if not in_sitemap:
+      issues.append(
+        Issue(
+          id=self.id,
+          title=self.title,
+          description=f"Canonical URL {canonical} not found in any sitemap.",
+          impact=self.impact,
+          recommendation="Ensure the canonical URL is included in your sitemap files.",
+          data={"canonical_url": canonical, "sitemaps": sitemaps}
+        )
+      )
+    
+    return issues
   
 @register
 class RedirectChainSmall(BaseRule):
@@ -349,7 +379,29 @@ class SitemapContainsURLs(BaseRule):
   tags = ["crawlability"]
 
   async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
-    raise NotImplementedError("This rule is not yet implemented.")
+    parsed = urlparse(url)
+    domain_root = f"{parsed.scheme}://{parsed.netloc}/"
+    canonical_tag = soup.find("link", rel="canonical")
+    target = canonical_tag.get("href").rstrip("/") if canonical_tag else url.rstrip("/")
+    
+    sitemaps = await get_sitemaps_for_domain(domain_root)
+    if not sitemaps:
+      return []
+    
+    found = await sitemap_urls_containing(domain_root, target)
+    if not found:
+      return [
+        Issue(
+          id=self.id,
+          title=self.title,
+          description="The page URL is not listed in any sitemap.",
+          impact=self.impact,
+          recommendation="Include the page URL in your sitemap files to improve discoverability.",
+          data={"page_url": target, "sitemaps": sitemaps}
+        )
+      ]
+      
+    return []
   
 @register
 class RobotsHeaderNoindex(BaseRule):
@@ -358,8 +410,30 @@ class RobotsHeaderNoindex(BaseRule):
   impact = Impact.CRITICAL
   tags = ["crawlability"]
 
-  async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
-    raise NotImplementedError("This rule is not yet implemented.")
+  async def run(self, html: str, url: str, soup, headers=None) -> list[BaseRule.Issue]:
+    hdrs = headers or {}
+    x_robots = None
+    for k, v in hdrs.items():
+      if k.lower() == "x-robots-tag":
+        x_robots = v
+        break
+      
+    if not x_robots:
+      return []
+    
+    if "noindex" in x_robots.lower():
+      return [
+        Issue(
+          id=self.id,
+          title=self.title,
+          description=f"X-Robots-Tag header contains 'noindex': {x_robots}",
+          impact=self.impact,
+          recommendation="Remove 'noindex' from the X-Robots-Tag header to allow indexing.",
+          data={"url": url, "x_robots_tag": x_robots}
+        )
+      ]
+      
+    return []
   
 @register
 class RobotsMetaNoindex(BaseRule):
