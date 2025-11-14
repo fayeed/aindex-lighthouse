@@ -3,7 +3,7 @@ from urllib.parse import urljoin, urlparse
 from .sitemap_helpers import get_sitemaps_for_domain, sitemap_urls_containing
 from .registry import register
 from .base import BaseRule, Impact, Issue
-from .utils import fetch_head_or_get, fetch_follow_redirects, async_client
+from .utils import fetch_head_or_get, fetch_follow_redirects, fetch_text_cached
 
 
 @register
@@ -46,8 +46,7 @@ class NoSoft404(BaseRule):
 
     async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
         text_len = len(soup.get_text(strip=True))
-        h1s = soup.find_all("h1")
-        if text_len < 50 or ("404" in "".join([h1.get_text() for h1 in h1s]).lower()):
+        if text_len < 50:
             return [
                 Issue(
                     id=self.id,
@@ -58,6 +57,22 @@ class NoSoft404(BaseRule):
                     data={"url": url, "text_length": text_len},
                 )
             ]
+        
+        # Only check h1 tags if we have some content
+        h1s = soup.find_all("h1")
+        if h1s:
+            h1_text = "".join(h1.get_text() for h1 in h1s).lower()
+            if "404" in h1_text:
+                return [
+                    Issue(
+                        id=self.id,
+                        title=self.title,
+                        description="The page appears to be a soft 404 (very little content or error indicators).",
+                        impact=self.impact,
+                        recommendation="Ensure that valid content is served for this URL and that it does not return a soft 404.",
+                        data={"url": url, "text_length": text_len},
+                    )
+                ]
 
         return []
 
@@ -101,11 +116,15 @@ class HreflangSelf(BaseRule):
         canonical_url = canonical.get("href", "").rstrip("/")
 
         hreflangs = soup.find_all("link", rel="alternate", hreflang=True)
-        for h in hreflangs:
-            if h.get("hreflang") == "x-default":
-                continue
-            if h.get("href", "").rstrip("/") == canonical_url:
-                return []  # correct self-reference
+        # Use set for faster lookups and avoid x-default
+        hreflang_urls = {
+            h.get("href", "").rstrip("/")
+            for h in hreflangs
+            if h.get("hreflang") != "x-default"
+        }
+        
+        if canonical_url in hreflang_urls:
+            return []  # correct self-reference found
 
         return [
             Issue(
@@ -116,7 +135,7 @@ class HreflangSelf(BaseRule):
                 recommendation="Add an hreflang entry pointing to the canonical URL.",
                 data={
                     "canonical_url": canonical_url,
-                    "hreflangs": [h.get("href") for h in hreflangs],
+                    "hreflangs": list(hreflang_urls),
                 },
             )
         ]
@@ -133,11 +152,9 @@ class HreflangValid(BaseRule):
 
     async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
         hreflangs = soup.find_all("link", rel="alternate", hreflang=True)
-        invalids = []
-        for h in hreflangs:
-            hl = h.get("hreflang")
-            if hl not in self.VALID_HREFLANGS:
-                invalids.append(hl)
+        # Use set difference to find invalid hreflangs efficiently
+        found_langs = {h.get("hreflang") for h in hreflangs}
+        invalids = found_langs - self.VALID_HREFLANGS
 
         if invalids:
             return [
@@ -147,7 +164,7 @@ class HreflangValid(BaseRule):
                     description="Invalid hreflang attributes found.",
                     impact=self.impact,
                     recommendation=f"Use valid hreflang values: {', '.join(sorted(self.VALID_HREFLANGS))}.",
-                    data={"invalid_hreflangs": invalids},
+                    data={"invalid_hreflangs": sorted(invalids)},
                 )
             ]
 
@@ -338,14 +355,13 @@ class SitemapPresent(BaseRule):
     async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
         root = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
         sitemap_url = urljoin(root, "/robots.txt")
-        response = await fetch_head_or_get(sitemap_url)
-        if response is None or response.status_code >= 400:
+        
+        # Use cached text fetch
+        txt = await fetch_text_cached(sitemap_url)
+        if not txt:
             return []
-        try:
-            txt = (await async_client.get(sitemap_url)).text.lower()
-        except:
-            return []
-        if "sitemap:" not in txt:
+        
+        if "sitemap:" not in txt.lower():
             return [
                 Issue(
                     id=self.id,
@@ -370,16 +386,19 @@ class SitemapReachable(BaseRule):
     async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
         root = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
         sitemap_url = urljoin(root, "/robots.txt")
-        try:
-            txt = (await async_client.get(sitemap_url)).text.lower()
-        except:
+        
+        # Use cached text fetch
+        txt = await fetch_text_cached(sitemap_url)
+        if not txt:
             return []
 
+        # Extract sitemap URLs using list comprehension
         sitemaps = [
             line.split(":", 1)[1].strip()
             for line in txt.splitlines()
-            if line.startswith("sitemap:")
+            if line.lower().startswith("sitemap:")
         ]
+        
         issues = []
         for sm_url in sitemaps:
             response = await fetch_head_or_get(sm_url)
@@ -507,16 +526,18 @@ class CrawlAllowed(BaseRule):
     async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
         root = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
         robots_url = urljoin(root, "/robots.txt")
-        try:
-            txt = (await async_client.get(robots_url)).text.lower()
-        except:
+        
+        # Use cached text fetch
+        txt = await fetch_text_cached(robots_url)
+        if not txt:
             return []
 
         path = urlparse(url).path or "/"
+        # Optimize: use list comprehension and early exit
         disallow_lines = [
             line.split(":", 1)[1].strip()
             for line in txt.splitlines()
-            if line.startswith("disallow:")
+            if line.lower().startswith("disallow:")
         ]
 
         if any(path.startswith(d) for d in disallow_lines):
