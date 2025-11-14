@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=65", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aindex-lighthouse"
+version = "0.1.0"
+description = "AI Lighthouse — local-first AI-readiness audit engine (Phase 1)"
+readme = "README.md"
+authors = [{ name="Fayeed Pawaskar", email="fayeed@live.com" }]
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE.md"]
+
+dependencies = [
+    "beautifulsoup4>=4.14.2",
+    "httpx[http2]>=0.28.1",
+    "playwright>=1.56.0",
+    "pydantic>=2.12.4",
+    "typer>=0.20.0",
+    "rich>=14.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai_lighthouse*"]
+
+[project.scripts]
+ai-lighthouse = "ai_lighthouse.cli:app"
