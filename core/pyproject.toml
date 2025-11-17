@@ -11,7 +11,15 @@ authors = [{ name="Fayeed Pawaskar", email="fayeed@live.com" }]
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE.md"]
+dependencies = [
+    "beautifulsoup4>=4.14.2",
+    "httpx>=0.28.1",
+    "lxml>=6.0.2",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ai_lighthouse_core*"]
+
+[scripts]
+ai-lighthouse-core = "ai_lighthouse_core.rules.runner:main"
