@@ -13,7 +13,7 @@ class RobotTxtPresent(BaseRule):
     impact = Impact.LOW
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         root = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
         robots_url = urljoin(root, "/robots.txt")
         response = await fetch_head_or_get(robots_url)
@@ -44,7 +44,7 @@ class NoSoft404(BaseRule):
     impact = Impact.HIGH
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         text_len = len(soup.get_text(strip=True))
         h1s = soup.find_all("h1")
         if text_len < 50 or ("404" in "".join([h1.get_text() for h1 in h1s]).lower()):
@@ -69,7 +69,7 @@ class No302Homepage(BaseRule):
     impact = Impact.LOW
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         root = f"{urlparse(url).scheme}://{urlparse(url).netloc}/"
         chain = await fetch_follow_redirects(root, max_redirects=5)
         if chain and chain[0][1] == 302:
@@ -94,7 +94,7 @@ class HreflangSelf(BaseRule):
     impact = Impact.LOW
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         canonical = soup.find("link", rel="canonical")
         if not canonical:
             return []
@@ -131,7 +131,7 @@ class HreflangValid(BaseRule):
 
     VALID_HREFLANGS = {"en", "fr", "de", "es", "it", "x-default"}  # extend as needed
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         hreflangs = soup.find_all("link", rel="alternate", hreflang=True)
         invalids = []
         for h in hreflangs:
@@ -161,7 +161,7 @@ class CanonicalPresent(BaseRule):
     impact = Impact.HIGH
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         canonical = soup.find("link", rel="canonical")
         if not canonical or not canonical.get("href"):
             return [
@@ -185,7 +185,7 @@ class CanonicalSelfRef(BaseRule):
     impact = Impact.MEDIUM
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         canonical = soup.find("link", rel="canonical")
         if not canonical:
             return []
@@ -212,7 +212,7 @@ class CanonicalResolves(BaseRule):
     impact = Impact.HIGH
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         canonical = soup.find("link", rel="canonical")
         if not canonical:
             return []
@@ -245,7 +245,7 @@ class CanonicalConsistent(BaseRule):
     impact = Impact.HIGH
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         canonical_tag = soup.find("link", rel="canonical")
         if not canonical_tag or not canonical_tag.get("href"):
             return []
@@ -286,7 +286,7 @@ class RedirectChainSmall(BaseRule):
 
     MAX_REDIRECTS = 3
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         chain = await fetch_follow_redirects(url, max_redirects=10)
         if len(chain) > self.MAX_REDIRECTS:
             return [
@@ -310,7 +310,7 @@ class HTTPStatusOk(BaseRule):
     impact = Impact.CRITICAL
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         chain = await fetch_follow_redirects(url)
         last = chain[-1]
         if last[1] >= 400:
@@ -335,7 +335,7 @@ class SitemapPresent(BaseRule):
     impact = Impact.MEDIUM
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         root = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
         sitemap_url = urljoin(root, "/robots.txt")
         response = await fetch_head_or_get(sitemap_url)
@@ -367,7 +367,7 @@ class SitemapReachable(BaseRule):
     impact = Impact.MEDIUM
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         root = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
         sitemap_url = urljoin(root, "/robots.txt")
         try:
@@ -410,7 +410,7 @@ class SitemapContainsURLs(BaseRule):
     impact = Impact.LOW
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         parsed = urlparse(url)
         domain_root = f"{parsed.scheme}://{parsed.netloc}/"
         canonical_tag = soup.find("link", rel="canonical")
@@ -447,7 +447,7 @@ class RobotsHeaderNoindex(BaseRule):
 
     async def run(
         self, html: str, url: str, soup, headers=None
-    ) -> list[BaseRule.Issue]:
+    ) -> list[Issue]:
         hdrs = headers or {}
         x_robots = None
         for k, v in hdrs.items():
@@ -480,7 +480,7 @@ class RobotsMetaNoindex(BaseRule):
     impact = Impact.CRITICAL
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         meta_robots = soup.find("meta", attrs={"name": "robots"})
         if meta_robots and "noindex" in meta_robots.get("content", "").lower():
             return [
@@ -504,7 +504,7 @@ class CrawlAllowed(BaseRule):
     impact = Impact.CRITICAL
     tags = ["crawlability"]
 
-    async def run(self, html: str, url: str, soup) -> list[BaseRule.Issue]:
+    async def run(self, html: str, url: str, soup, headers) -> list[Issue]:
         root = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
         robots_url = urljoin(root, "/robots.txt")
         try:
